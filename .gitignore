@@ -1,0 +1,37 @@
+# Quarto
+/.quarto/
+/_site/
+/_book/
+/_freeze/
+*_files/
+*_cache/
+
+# Rendered outputs (generuju sa z .qmd)
+*.html
+*.pdf
+
+# R
+.Rproj.user/
+.Rhistory
+.RData
+.Ruserdata
+*.Rproj
+
+# LaTeX
+*.aux
+*.log
+*.out
+*.toc
+*.synctex.gz
+*.fdb_latexmk
+*.fls
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*~
+*.swp
