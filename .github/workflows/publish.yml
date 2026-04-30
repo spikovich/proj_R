@@ -4,9 +4,9 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
-  # Auto-update kazdy den o 6:00 UTC
+  # Auto-update kazdy obchodny den o 16:00 UTC (12:00 ET, biznis-hodiny v US)
   schedule:
-    - cron: '0 6 * * *'
+    - cron: '0 16 * * 1-5'
 
 permissions:
   contents: write
