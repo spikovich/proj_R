@@ -9,7 +9,8 @@ rýchlosť konvergencie odhadu $\mathcal{O}(1/\sqrt{n})$ a ukazuje použitie
 Monte Carla na ázijskej opcii, kde analytické riešenie neexistuje.
 
 🌐 **Online verzia:** _doplň URL po prvom deploy-i_
-https://spikovich.github.io/proj_R/
+
+Link : https://spikovich.github.io/proj_R/
 
 ## Štruktúra
 
