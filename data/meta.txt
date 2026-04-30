@@ -5,6 +5,6 @@ option_expiry: 2026-06-18
 days_to_expiry: 49
 years_to_expiry: 0.1342
 n_options: 33
-market_was_open: FALSE
-price_source: last trade
-fetched_at: 2026-04-30 12:43:14.591304
+market_was_open: TRUE
+price_source: mid (bid+ask)/2
+fetched_at: 2026-04-30 17:09:22.498326
