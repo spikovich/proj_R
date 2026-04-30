@@ -1,0 +1,322 @@
+---
+title: "Oceňovanie európskych opcií: Black-Scholesov model a metóda Monte Carlo"
+subtitle: "Technická správa"
+author: "Ian Spika"
+date: today
+lang: sk
+format:
+  html:
+    embed-resources: true
+    toc: true
+    toc-depth: 3
+    number-sections: true
+    code-fold: show
+    theme: cosmo
+  pdf:
+    documentclass: scrartcl
+    papersize: a4
+    toc: true
+    toc-depth: 3
+    number-sections: true
+    fig-pos: "H"
+    geometry:
+      - margin=2.5cm
+    include-in-header:
+      text: |
+        \usepackage{amsmath}
+        \usepackage{amssymb}
+bibliography: references.bib
+csl: iso690-author-date-sk-sk.csl
+execute:
+  warning: false
+  message: false
+---
+
+# Úvod {#sec-uvod}
+
+Oceňovanie finančných derivátov patrí medzi najvýznamnejšie aplikácie
+matematiky v ekonómii. Európska kúpna opcia (call) dáva majiteľovi právo,
+nie však povinnosť, kúpiť podkladové aktívum za vopred dohodnutú cenu $K$
+v stanovenom čase $T$. Otázka, koľko má taká opcia stáť dnes, viedla v
+roku 1973 k zverejneniu slávneho modelu, ktorý získal Nobelovu cenu za
+ekonómiu — Black-Scholesovho modelu [@blackscholes1973; @merton1973].
+
+Hoci pre vanilkové európske opcie existuje uzavretá analytická formula,
+v praxi sa stretávame s mnohými variantmi opcií (ázijské, bariérové,
+americké, koš opcií), pre ktoré vzorec neexistuje a nutne sa musíme
+uchýliť k numerickým metódam. Najflexibilnejšou z nich je metóda Monte
+Carlo, ktorú do oceňovania opcií zaviedol @boyle1977.
+
+Cieľom tejto správy je:
+
+1. predstaviť teoretické pozadie Black-Scholesovho modelu,
+2. implementovať obe metódy oceňovania v jazyku R,
+3. empiricky overiť konvergenciu Monte Carlo odhadu k analytickej
+   hodnote a kvantifikovať jeho štatistickú chybu,
+4. ukázať, prečo je Monte Carlo nevyhnutné pre exotické opcie, na
+   príklade ázijskej opcie.
+
+# Teoretické pozadie {#sec-teoria}
+
+## Geometrický Brownov pohyb
+
+Black-Scholesov model predpokladá, že cena podkladového aktíva $S_t$ sa
+riadi stochastickou diferenciálnou rovnicou
+
+$$
+dS_t = \mu S_t\, dt + \sigma S_t\, dW_t,
+$$ {#eq-sde}
+
+kde $\mu$ je očakávaný výnos, $\sigma$ volatilita a $W_t$ štandardný
+Wienerov proces. Riešením rovnice @eq-sde je geometrický Brownov pohyb
+
+$$
+S_T = S_0 \exp\!\left[\left(\mu - \tfrac{1}{2}\sigma^{2}\right) T + \sigma W_T\right],
+$$ {#eq-gbm}
+
+čo plynie z Itôovej lemy [@hull2018, kap. 14]. Pre účely oceňovania v
+rizikovo-neutrálnej miere nahrádzame $\mu$ bezrizikovou úrokovou mierou
+$r$.
+
+## Black-Scholesova formula
+
+Cena európskej kúpnej opcie podľa Black-Scholesovho modelu je
+
+$$
+C_{\mathrm{BS}} = S_0\, \Phi(d_1) - K e^{-rT}\, \Phi(d_2),
+$$ {#eq-bs}
+
+kde $\Phi$ je distribučná funkcia štandardného normálneho rozdelenia a
+
+$$
+d_1 = \frac{\ln(S_0/K) + (r + \tfrac{1}{2}\sigma^2)T}{\sigma\sqrt{T}}, \qquad
+d_2 = d_1 - \sigma\sqrt{T}.
+$$ {#eq-d1d2}
+
+## Monte Carlo oceňovanie
+
+Cena opcie je v rizikovo-neutrálnej miere $\mathbb{Q}$ definovaná ako
+diskontovaná očakávaná výplata:
+
+$$
+C = e^{-rT}\, \mathbb{E}^{\mathbb{Q}}\!\left[(S_T - K)^{+}\right].
+$$ {#eq-risk-neutral}
+
+Monte Carlo odhad spočíva v generovaní $n$ nezávislých realizácií ceny
+$S_T^{(i)}$ podľa rovnice @eq-gbm a v aproximácii očakávania
+aritmetickým priemerom:
+
+$$
+\hat{C}_{\mathrm{MC}} = e^{-rT}\, \frac{1}{n} \sum_{i=1}^{n} \left(S_T^{(i)} - K\right)^{+}.
+$$ {#eq-mc}
+
+Podľa centrálnej limitnej vety je štandardná chyba odhadu rádu
+$\mathcal{O}(1/\sqrt{n})$ a 95 % konfidenčný interval má tvar
+$\hat{C}_{\mathrm{MC}} \pm 1{,}96 \cdot \hat{s}/\sqrt{n}$, kde $\hat{s}$
+je výberová smerodajná odchýlka diskontovaných výplat
+[@glasserman2003, kap. 1].
+
+# Implementácia v R {#sec-implementacia}
+
+## Parametre úlohy
+
+Pre všetky výpočty použijeme jednu sadu modelových parametrov, ktoré sú
+typické pre krátkodobé akciové opcie:
+
+```{r}
+#| label: params
+S0    <- 100      # aktualna cena podkladu
+K     <- 100      # realizacna cena (at-the-money)
+r     <- 0.05     # bezrizikova urokova miera
+sigma <- 0.20     # volatilita
+T_    <- 1        # cas do expiracie (v rokoch)
+```
+
+## Black-Scholesova formula
+
+Implementácia rovnice @eq-bs je priamočiara:
+
+```{r}
+#| label: bs-fun
+bs_call <- function(S0, K, r, sigma, T_) {
+  d1 <- (log(S0 / K) + (r + 0.5 * sigma^2) * T_) / (sigma * sqrt(T_))
+  d2 <- d1 - sigma * sqrt(T_)
+  S0 * pnorm(d1) - K * exp(-r * T_) * pnorm(d2)
+}
+
+C_bs <- bs_call(S0, K, r, sigma, T_)
+C_bs
+```
+
+Analytická cena opcie je $C_{\mathrm{BS}} = `r round(C_bs, 4)`$.
+
+## Monte Carlo simulácia
+
+Funkcia nižšie generuje $n$ koncových cien podľa @eq-gbm a vracia
+bodový odhad spolu s 95 % konfidenčným intervalom podľa
+@eq-risk-neutral:
+
+```{r}
+#| label: mc-fun
+mc_call <- function(S0, K, r, sigma, T_, n, seed = NULL) {
+  if (!is.null(seed)) set.seed(seed)
+  Z       <- rnorm(n)
+  ST      <- S0 * exp((r - 0.5 * sigma^2) * T_ + sigma * sqrt(T_) * Z)
+  payoff  <- pmax(ST - K, 0)
+  disc    <- exp(-r * T_) * payoff
+  est     <- mean(disc)
+  se      <- sd(disc) / sqrt(n)
+  list(
+    estimate = est,
+    se       = se,
+    ci_lo    = est - 1.96 * se,
+    ci_hi    = est + 1.96 * se
+  )
+}
+
+mc_result <- mc_call(S0, K, r, sigma, T_, n = 100000, seed = 42)
+mc_result
+```
+
+Pre $n = 100\,000$ sme dostali odhad
+$\hat{C}_{\mathrm{MC}} = `r round(mc_result$estimate, 4)`$ s 95 %
+konfidenčným intervalom $[`r round(mc_result$ci_lo, 4)`,\ `r round(mc_result$ci_hi, 4)`]$,
+ktorý analytickú hodnotu obsahuje.
+
+# Výsledky {#sec-vysledky}
+
+## Porovnanie pre rastúce $n$
+
+Aby sme overili rýchlosť konvergencie odhadu @eq-mc, zopakujme
+simuláciu pre rôzne hodnoty $n$. Výsledky sú zhrnuté v @tbl-konvergencia.
+
+```{r}
+#| label: tbl-konvergencia
+#| tbl-cap: "Konvergencia Monte Carlo odhadu k Black-Scholesovej cene."
+ns <- c(1e2, 1e3, 1e4, 1e5, 1e6)
+
+tab <- do.call(rbind, lapply(ns, function(n) {
+  res <- mc_call(S0, K, r, sigma, T_, n, seed = 2026)
+  data.frame(
+    n      = n,
+    odhad  = res$estimate,
+    se     = res$se,
+    chyba  = abs(res$estimate - C_bs)
+  )
+}))
+
+knitr::kable(
+  tab,
+  col.names = c("n", "Odhad MC", "Štand. chyba", "|MC − BS|"),
+  digits    = 5,
+  align     = "rrrr"
+)
+```
+
+Z @tbl-konvergencia vidíme, že štandardná chyba aj absolútna odchýlka od
+analytickej ceny klesajú približne ako $1/\sqrt{n}$ — pri zvýšení $n$ o
+faktor 100 sa chyba zníži približne 10-násobne.
+
+## Grafická ilustrácia konvergencie
+
+Konvergencia bodového odhadu spolu s pásmom 95 % konfidenčného
+intervalu je znázornená na @fig-konvergencia.
+
+```{r}
+#| label: fig-konvergencia
+#| fig-cap: "Konvergencia Monte Carlo odhadu ceny opcie k analytickej hodnote (čierna prerušovaná čiara) so zväčšujúcim sa počtom simulácií. Šedé pásmo predstavuje 95 % konfidenčný interval."
+#| fig-width: 7
+#| fig-height: 4.5
+
+set.seed(2026)
+n_max  <- 50000
+Z      <- rnorm(n_max)
+ST     <- S0 * exp((r - 0.5 * sigma^2) * T_ + sigma * sqrt(T_) * Z)
+disc   <- exp(-r * T_) * pmax(ST - K, 0)
+
+cumul_mean <- cumsum(disc) / seq_along(disc)
+cumul_var  <- (cumsum(disc^2) - seq_along(disc) * cumul_mean^2) /
+              pmax(seq_along(disc) - 1, 1)
+cumul_se   <- sqrt(cumul_var / seq_along(disc))
+
+idx <- seq(100, n_max, by = 50)
+
+plot(idx, cumul_mean[idx], type = "l", lwd = 1.5, col = "steelblue",
+     ylim = c(C_bs - 1.5, C_bs + 1.5),
+     xlab = "počet simulácií n", ylab = "odhad ceny opcie",
+     main = "")
+polygon(c(idx, rev(idx)),
+        c(cumul_mean[idx] - 1.96 * cumul_se[idx],
+          rev(cumul_mean[idx] + 1.96 * cumul_se[idx])),
+        col = adjustcolor("steelblue", alpha.f = 0.2), border = NA)
+abline(h = C_bs, lty = 2, lwd = 1.2)
+legend("topright", legend = c("MC odhad", "95 % CI", "BS hodnota"),
+       col = c("steelblue", adjustcolor("steelblue", 0.4), "black"),
+       lty = c(1, 1, 2), lwd = c(1.5, 6, 1.2), bty = "n")
+```
+
+## Bonus: ázijská opcia
+
+Pre exotické opcie analytická formula vo všeobecnosti neexistuje a
+metóda Monte Carlo sa stáva nevyhnutnou. Ako príklad uvažujme **ázijskú
+priemerovaciu kúpnu opciu**, ktorej výplata závisí od priemeru ceny
+počas životnosti opcie:
+
+$$
+\text{payoff} = \left(\overline{S} - K\right)^{+},
+\qquad
+\overline{S} = \frac{1}{m} \sum_{j=1}^{m} S_{t_j}.
+$$ {#eq-asian}
+
+Na rozdiel od @eq-mc tu musíme generovať celé trajektórie cien, nie len
+koncovú hodnotu:
+
+```{r}
+#| label: asian
+mc_asian <- function(S0, K, r, sigma, T_, n, m, seed = NULL) {
+  if (!is.null(seed)) set.seed(seed)
+  dt <- T_ / m
+  Z  <- matrix(rnorm(n * m), nrow = n, ncol = m)
+
+  log_inc <- (r - 0.5 * sigma^2) * dt + sigma * sqrt(dt) * Z
+  log_S   <- t(apply(log_inc, 1, cumsum))
+  S_paths <- S0 * exp(log_S)
+
+  S_avg   <- rowMeans(S_paths)
+  payoff  <- pmax(S_avg - K, 0)
+  disc    <- exp(-r * T_) * payoff
+  list(
+    estimate = mean(disc),
+    se       = sd(disc) / sqrt(n)
+  )
+}
+
+asian <- mc_asian(S0, K, r, sigma, T_, n = 50000, m = 50, seed = 7)
+asian
+```
+
+Cena ázijskej opcie ($`r round(asian$estimate, 4)`$) je nižšia než cena
+európskej opcie ($`r round(C_bs, 4)`$), čo je očakávané: priemerovanie
+znižuje volatilitu výplaty, a teda aj cenu opcie [@glasserman2003,
+kap. 4].
+
+# Záver {#sec-zaver}
+
+V tejto správe sme porovnali dve metódy oceňovania európskej kúpnej
+opcie: analytickú Black-Scholesovu formulu a numerickú Monte Carlo
+simuláciu. Empiricky sme overili teoretickú rýchlosť konvergencie
+$\mathcal{O}(1/\sqrt{n})$ — pri $n = 10^6$ sa Monte Carlo odhad líši od
+analytickej hodnoty rádovo o tisíciny.
+
+Hoci pre vanilkové európske opcie je analytická formula presná aj
+rýchlejšia, Monte Carlo metóda má dve zásadné výhody: je všeobecná
+(pracuje s ľubovoľnou výplatnou funkciou) a jej presnosť sa dá ľubovoľne
+zvyšovať počtom simulácií. Pre exotické opcie ako ázijská alebo
+bariérová je MC často jediný praktický nástroj.
+
+Ďalšie smery, ktorými by sa práca dala rozšíriť, zahŕňajú techniky
+redukcie rozptylu (antitetické premenné, kontrolné premenné) a oceňovanie
+amerických opcií metódou Longstaff-Schwartz, prehľad ktorých uvádza
+@glasserman2003.
+
+# Literatúra {.unnumbered}

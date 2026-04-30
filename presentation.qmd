@@ -1,0 +1,162 @@
+---
+title: "Oceňovanie opcií: Black-Scholes vs Monte Carlo"
+author: "Ian Spika"
+date: today
+lang: sk
+format:
+  revealjs:
+    embed-resources: true
+    theme: simple
+    slide-number: true
+    incremental: false
+    transition: fade
+    code-line-numbers: false
+bibliography: references.bib
+csl: iso690-author-date-sk-sk.csl
+execute:
+  echo: true
+  warning: false
+  message: false
+---
+
+## Motivácia
+
+- Európska kúpna opcia: právo (nie povinnosť) kúpiť aktívum za cenu $K$ v čase $T$.
+- **Otázka:** koľko má opcia stáť dnes?
+- Black & Scholes (1973) — Nobelova cena za uzavretú formulu [@blackscholes1973].
+- Pre **exotické** opcie analytická formula neexistuje → potrebujeme **Monte Carlo** [@boyle1977].
+
+## Model: Geometrický Brownov pohyb
+
+Cena podkladu sa riadi SDR
+
+$$
+dS_t = r S_t\, dt + \sigma S_t\, dW_t
+$$
+
+s riešením
+
+$$
+S_T = S_0 \exp\!\left[(r - \tfrac{1}{2}\sigma^2)T + \sigma W_T\right].
+$$
+
+Parametre: $S_0 = 100$, $K = 100$, $r = 5\,\%$, $\sigma = 20\,\%$, $T = 1$ rok.
+
+## Black-Scholesova formula
+
+$$
+C_{\mathrm{BS}} = S_0\, \Phi(d_1) - K e^{-rT}\, \Phi(d_2)
+$$
+
+$$
+d_1 = \frac{\ln(S_0/K) + (r + \tfrac{1}{2}\sigma^2)T}{\sigma\sqrt{T}}, \quad d_2 = d_1 - \sigma\sqrt{T}
+$$
+
+```{r}
+bs_call <- function(S0, K, r, sigma, T_) {
+  d1 <- (log(S0/K) + (r + 0.5*sigma^2)*T_) / (sigma*sqrt(T_))
+  d2 <- d1 - sigma*sqrt(T_)
+  S0*pnorm(d1) - K*exp(-r*T_)*pnorm(d2)
+}
+C_bs <- bs_call(100, 100, 0.05, 0.20, 1)
+C_bs
+```
+
+## Monte Carlo odhad
+
+Diskontovaná stredná výplata v rizikovo-neutrálnej miere:
+
+$$
+\hat{C}_{\mathrm{MC}} = e^{-rT}\, \frac{1}{n} \sum_{i=1}^{n} (S_T^{(i)} - K)^{+}
+$$
+
+```{r}
+set.seed(42)
+n  <- 100000
+Z  <- rnorm(n)
+ST <- 100 * exp((0.05 - 0.5*0.20^2)*1 + 0.20*sqrt(1)*Z)
+C_mc <- exp(-0.05*1) * mean(pmax(ST - 100, 0))
+C_mc
+```
+
+Rozdiel od BS hodnoty: `r sprintf("%.4f", abs(C_mc - bs_call(100,100,0.05,0.20,1)))`.
+
+## Konvergencia odhadu
+
+```{r}
+#| echo: false
+#| fig-width: 9
+#| fig-height: 4.5
+set.seed(2026)
+S0<-100; K<-100; r<-0.05; sigma<-0.20; T_<-1
+C_bs <- bs_call(S0,K,r,sigma,T_)
+n_max <- 50000
+Z <- rnorm(n_max)
+ST <- S0*exp((r-0.5*sigma^2)*T_ + sigma*sqrt(T_)*Z)
+disc <- exp(-r*T_)*pmax(ST-K,0)
+cm <- cumsum(disc)/seq_along(disc)
+cv <- (cumsum(disc^2)-seq_along(disc)*cm^2)/pmax(seq_along(disc)-1,1)
+cse <- sqrt(cv/seq_along(disc))
+idx <- seq(100, n_max, by=50)
+plot(idx, cm[idx], type="l", lwd=1.5, col="steelblue",
+     ylim=c(C_bs-1.5, C_bs+1.5),
+     xlab="počet simulácií n", ylab="odhad ceny opcie")
+polygon(c(idx,rev(idx)),
+        c(cm[idx]-1.96*cse[idx], rev(cm[idx]+1.96*cse[idx])),
+        col=adjustcolor("steelblue",0.2), border=NA)
+abline(h=C_bs, lty=2)
+legend("topright", c("MC odhad","95 % CI","BS"),
+       col=c("steelblue",adjustcolor("steelblue",0.4),"black"),
+       lty=c(1,1,2), lwd=c(1.5,6,1.2), bty="n")
+```
+
+Štandardná chyba klesá ako $\mathcal{O}(1/\sqrt{n})$.
+
+## Tabuľka konvergencie
+
+```{r}
+#| echo: false
+mc_call <- function(S0,K,r,sigma,T_,n,seed=NULL){
+  if(!is.null(seed)) set.seed(seed)
+  Z<-rnorm(n); ST<-S0*exp((r-0.5*sigma^2)*T_+sigma*sqrt(T_)*Z)
+  d<-exp(-r*T_)*pmax(ST-K,0)
+  list(est=mean(d), se=sd(d)/sqrt(n))
+}
+ns <- c(1e2,1e3,1e4,1e5,1e6)
+tab <- do.call(rbind, lapply(ns, function(n){
+  res <- mc_call(100,100,0.05,0.20,1,n,seed=2026)
+  data.frame(n=n, odhad=res$est, se=res$se, chyba=abs(res$est-C_bs))
+}))
+knitr::kable(tab, col.names=c("n","Odhad MC","Štand. chyba","|MC − BS|"),
+             digits=5)
+```
+
+## Prečo Monte Carlo: ázijská opcia
+
+Výplata závisí od **priemeru** ceny:
+$$
+\text{payoff} = \left(\bar S - K\right)^{+}, \quad \bar S = \frac{1}{m}\sum_{j=1}^{m} S_{t_j}
+$$
+
+```{r}
+set.seed(7)
+n <- 50000; m <- 50; dt <- 1/m
+Z <- matrix(rnorm(n*m), n, m)
+inc <- (0.05 - 0.5*0.20^2)*dt + 0.20*sqrt(dt)*Z
+S_paths <- 100 * exp(t(apply(inc, 1, cumsum)))
+C_asian <- exp(-0.05) * mean(pmax(rowMeans(S_paths) - 100, 0))
+C_asian
+```
+
+Cena $`r round(C_asian,3)`$ < BS $`r round(C_bs,3)`$ — priemer znižuje volatilitu výplaty.
+
+## Zhrnutie
+
+- **BS:** rýchle, presné, ale len pre vanilkové opcie.
+- **MC:** všeobecné, presnosť rastie s $\sqrt{n}$, **nevyhnutné** pre exotické deriváty.
+- **Smerom ďalej:** redukcia rozptylu, americké opcie (Longstaff-Schwartz) [@glasserman2003].
+
+## Literatúra {.unnumbered}
+
+::: {#refs}
+:::

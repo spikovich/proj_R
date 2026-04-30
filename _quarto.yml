@@ -1,0 +1,33 @@
+project:
+  type: website
+  output-dir: _site
+  render:
+    - index.qmd
+    - report.qmd
+    - presentation.qmd
+    - dashboard.qmd
+
+website:
+  title: "Oceňovanie opcií: BS vs Monte Carlo"
+  navbar:
+    left:
+      - href: index.qmd
+        text: Domov
+      - href: report.qmd
+        text: Správa
+      - href: presentation.qmd
+        text: Prezentácia
+      - href: dashboard.qmd
+        text: Dashboard
+
+format:
+  html:
+    embed-resources: false
+    theme: cosmo
+    toc: true
+
+bibliography: references.bib
+csl: iso690-author-date-sk-sk.csl
+
+execute:
+  freeze: auto

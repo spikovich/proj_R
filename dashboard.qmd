@@ -1,0 +1,125 @@
+---
+title: "Oceňovanie opcií — Dashboard"
+author: "Ian Spika"
+lang: sk
+format:
+  dashboard:
+    embed-resources: true
+    theme: cosmo
+    orientation: columns
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r}
+#| label: setup
+bs_call <- function(S0, K, r, sigma, T_) {
+  d1 <- (log(S0/K) + (r + 0.5*sigma^2)*T_) / (sigma*sqrt(T_))
+  d2 <- d1 - sigma*sqrt(T_)
+  S0*pnorm(d1) - K*exp(-r*T_)*pnorm(d2)
+}
+
+mc_call <- function(S0, K, r, sigma, T_, n, seed = 42) {
+  set.seed(seed)
+  Z  <- rnorm(n)
+  ST <- S0 * exp((r - 0.5*sigma^2)*T_ + sigma*sqrt(T_)*Z)
+  d  <- exp(-r*T_) * pmax(ST - K, 0)
+  list(est = mean(d), se = sd(d)/sqrt(n))
+}
+
+S0 <- 100; K <- 100; r <- 0.05; sigma <- 0.20; T_ <- 1
+C_bs <- bs_call(S0, K, r, sigma, T_)
+mc100k <- mc_call(S0, K, r, sigma, T_, n = 100000)
+diff_abs <- abs(mc100k$est - C_bs)
+```
+
+## Column {width=30%}
+
+### Row {height=33%}
+
+```{r}
+#| content: valuebox
+#| title: "Black-Scholes cena"
+list(
+  icon  = "calculator",
+  color = "primary",
+  value = sprintf("%.4f", C_bs)
+)
+```
+
+### Row {height=33%}
+
+```{r}
+#| content: valuebox
+#| title: "Monte Carlo odhad (n = 100 000)"
+list(
+  icon  = "dice-5",
+  color = "info",
+  value = sprintf("%.4f", mc100k$est)
+)
+```
+
+### Row {height=34%}
+
+```{r}
+#| content: valuebox
+#| title: "Absolútna odchýlka MC od BS"
+list(
+  icon  = "graph-down",
+  color = "success",
+  value = sprintf("%.4f", diff_abs)
+)
+```
+
+## Column {width=70%}
+
+### Row {height=55%}
+
+```{r}
+#| title: "Konvergencia MC odhadu k Black-Scholesovej cene"
+set.seed(2026)
+n_max <- 50000
+Z  <- rnorm(n_max)
+ST <- S0 * exp((r - 0.5*sigma^2)*T_ + sigma*sqrt(T_)*Z)
+disc <- exp(-r*T_) * pmax(ST - K, 0)
+cm <- cumsum(disc) / seq_along(disc)
+cv <- (cumsum(disc^2) - seq_along(disc)*cm^2) / pmax(seq_along(disc) - 1, 1)
+cse <- sqrt(cv / seq_along(disc))
+idx <- seq(100, n_max, by = 50)
+
+plot(idx, cm[idx], type = "l", lwd = 1.5, col = "steelblue",
+     ylim = c(C_bs - 1.2, C_bs + 1.2),
+     xlab = "počet simulácií n", ylab = "odhad ceny opcie",
+     main = "")
+polygon(c(idx, rev(idx)),
+        c(cm[idx] - 1.96*cse[idx], rev(cm[idx] + 1.96*cse[idx])),
+        col = adjustcolor("steelblue", 0.2), border = NA)
+abline(h = C_bs, lty = 2, lwd = 1.2)
+legend("topright", c("MC odhad", "95 % CI", "BS hodnota"),
+       col = c("steelblue", adjustcolor("steelblue", 0.4), "black"),
+       lty = c(1, 1, 2), lwd = c(1.5, 6, 1.2), bty = "n")
+```
+
+### Row {height=45%}
+
+```{r}
+#| title: "Konvergencia: tabuľka pre rastúce n"
+ns <- c(1e2, 1e3, 1e4, 1e5, 1e6)
+tab <- do.call(rbind, lapply(ns, function(n) {
+  res <- mc_call(S0, K, r, sigma, T_, n, seed = 2026)
+  data.frame(
+    n        = n,
+    odhad    = res$est,
+    se       = res$se,
+    odchylka = abs(res$est - C_bs)
+  )
+}))
+knitr::kable(
+  tab,
+  col.names = c("n", "Odhad MC", "Štand. chyba", "|MC − BS|"),
+  digits    = 5,
+  align     = "rrrr"
+)
+```

@@ -1,0 +1,27 @@
+---
+title: "Oceňovanie európskych opcií"
+subtitle: "Black-Scholesov model a metóda Monte Carlo"
+author: "Ian Spika"
+date: today
+lang: sk
+---
+
+## O projekte
+
+Tento projekt porovnáva dva prístupy k oceňovaniu európskych kúpnych
+opcií: analytickú **Black-Scholesovu formulu** a numerickú **Monte Carlo
+simuláciu**. Empiricky overuje rýchlosť konvergencie odhadu a ukazuje,
+prečo je Monte Carlo nevyhnutné pre exotické deriváty.
+
+## Obsah
+
+- 📄 [**Technická správa**](report.qmd) — kompletný dokument s teóriou,
+  implementáciou a výsledkami (HTML aj [PDF](report.pdf)).
+- 🎬 [**Prezentácia**](presentation.qmd) — zhrnutie projektu na
+  8 slajdoch.
+- 📊 [**Dashboard**](dashboard.qmd) — jednostránkový prehľad výsledkov.
+
+## Zdrojový kód
+
+Zdrojové súbory `.qmd`, bibliografia a citačný štýl sú dostupné v
+GitHub repozitári projektu.
