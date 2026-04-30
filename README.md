@@ -41,16 +41,3 @@ quarto render
 ```
 
 Vygenerované HTML/PDF skončia v `_site/`.
-
-## Publikácia
-
-Push na `main` automaticky spustí GitHub Actions, ktorý vyrendruje
-projekt a publikuje ho na GitHub Pages (vetva `gh-pages`).
-
-```bash
-git add .
-git commit -m "update report"
-git push
-```
-
-URL bude vo formáte `https://<username>.github.io/<repo-name>/`.
