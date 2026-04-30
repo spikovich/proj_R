@@ -1,7 +1,7 @@
 # Oceňovanie európskych opcií: Black-Scholes vs Monte Carlo
 
 **Autor:** Ian Spika
-**Predmet:** Softvér na analýzu údajov
+**Predmet:** Softvér na analýzu dat
 
 Projekt porovnáva analytickú Black-Scholesovu formulu s Monte Carlo
 simuláciou na úlohe oceňovania európskej kúpnej opcie. Empiricky overuje
