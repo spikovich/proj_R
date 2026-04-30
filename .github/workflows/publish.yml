@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+  # Auto-update kazdy den o 6:00 UTC
+  schedule:
+    - cron: '0 6 * * *'
 
 permissions:
   contents: write
@@ -34,6 +37,22 @@ jobs:
           packages: |
             any::rmarkdown
             any::knitr
+            any::quantmod
+
+      - name: Fetch fresh AAPL data
+        run: Rscript fetch_data.R
+
+      - name: Commit data updates if any
+        run: |
+          git config --global user.email "actions@github.com"
+          git config --global user.name "GitHub Actions"
+          git add data/
+          if git diff --staged --quiet; then
+            echo "No data changes."
+          else
+            git commit -m "Auto-update AAPL data [skip ci]"
+            git push
+          fi
 
       - name: Render and publish to GitHub Pages
         uses: quarto-dev/quarto-actions/publish@v2

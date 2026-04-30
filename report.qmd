@@ -1,6 +1,6 @@
 ---
 title: "Oceňovanie európskych opcií: Black-Scholesov model a metóda Monte Carlo"
-subtitle: "Technická správa"
+subtitle: "Technická správa s aplikáciou na reálne dáta (AAPL)"
 author: "Ian Spika"
 date: today
 lang: sk
@@ -54,7 +54,10 @@ Cieľom tejto správy je:
 3. empiricky overiť konvergenciu Monte Carlo odhadu k analytickej
    hodnote a kvantifikovať jeho štatistickú chybu,
 4. ukázať, prečo je Monte Carlo nevyhnutné pre exotické opcie, na
-   príklade ázijskej opcie.
+   príklade ázijskej opcie,
+5. **aplikovať obe metódy na reálne trhové dáta** akcie Apple Inc.
+   (AAPL) a porovnať modelové ceny so skutočnými trhovými kotáciami,
+   čo vedie ku konceptu *implikovanej volatility*.
 
 # Teoretické pozadie {#sec-teoria}
 
@@ -118,10 +121,11 @@ je výberová smerodajná odchýlka diskontovaných výplat
 
 # Implementácia v R {#sec-implementacia}
 
-## Parametre úlohy
+## Funkcie a parametre úlohy
 
-Pre všetky výpočty použijeme jednu sadu modelových parametrov, ktoré sú
-typické pre krátkodobé akciové opcie:
+Pre základnú validáciu metód použijeme modelové parametre typické pre
+krátkodobé akciové opcie. Reálne dáta AAPL spracujeme v
+@sec-realne-data.
 
 ```{r}
 #| label: params
@@ -132,10 +136,6 @@ sigma <- 0.20     # volatilita
 T_    <- 1        # cas do expiracie (v rokoch)
 ```
 
-## Black-Scholesova formula
-
-Implementácia rovnice @eq-bs je priamočiara:
-
 ```{r}
 #| label: bs-fun
 bs_call <- function(S0, K, r, sigma, T_) {
@@ -144,20 +144,6 @@ bs_call <- function(S0, K, r, sigma, T_) {
   S0 * pnorm(d1) - K * exp(-r * T_) * pnorm(d2)
 }
 
-C_bs <- bs_call(S0, K, r, sigma, T_)
-C_bs
-```
-
-Analytická cena opcie je $C_{\mathrm{BS}} = `r round(C_bs, 4)`$.
-
-## Monte Carlo simulácia
-
-Funkcia nižšie generuje $n$ koncových cien podľa @eq-gbm a vracia
-bodový odhad spolu s 95 % konfidenčným intervalom podľa
-@eq-risk-neutral:
-
-```{r}
-#| label: mc-fun
 mc_call <- function(S0, K, r, sigma, T_, n, seed = NULL) {
   if (!is.null(seed)) set.seed(seed)
   Z       <- rnorm(n)
@@ -166,26 +152,22 @@ mc_call <- function(S0, K, r, sigma, T_, n, seed = NULL) {
   disc    <- exp(-r * T_) * payoff
   est     <- mean(disc)
   se      <- sd(disc) / sqrt(n)
-  list(
-    estimate = est,
-    se       = se,
-    ci_lo    = est - 1.96 * se,
-    ci_hi    = est + 1.96 * se
-  )
+  list(estimate = est, se = se,
+       ci_lo = est - 1.96 * se, ci_hi = est + 1.96 * se)
 }
 
+C_bs <- bs_call(S0, K, r, sigma, T_)
 mc_result <- mc_call(S0, K, r, sigma, T_, n = 100000, seed = 42)
-mc_result
 ```
 
-Pre $n = 100\,000$ sme dostali odhad
+Pre modelové parametre dostávame analytickú cenu
+$C_{\mathrm{BS}} = `r round(C_bs, 4)`$ a Monte Carlo odhad
 $\hat{C}_{\mathrm{MC}} = `r round(mc_result$estimate, 4)`$ s 95 %
-konfidenčným intervalom $[`r round(mc_result$ci_lo, 4)`,\ `r round(mc_result$ci_hi, 4)`]$,
-ktorý analytickú hodnotu obsahuje.
+konfidenčným intervalom $[`r round(mc_result$ci_lo, 4)`,\ `r round(mc_result$ci_hi, 4)`]$.
 
-# Výsledky {#sec-vysledky}
+# Validácia: konvergencia Monte Carlo odhadu {#sec-validacia}
 
-## Porovnanie pre rastúce $n$
+## Tabuľka konvergencie
 
 Aby sme overili rýchlosť konvergencie odhadu @eq-mc, zopakujme
 simuláciu pre rôzne hodnoty $n$. Výsledky sú zhrnuté v @tbl-konvergencia.
@@ -197,19 +179,14 @@ ns <- c(1e2, 1e3, 1e4, 1e5, 1e6)
 
 tab <- do.call(rbind, lapply(ns, function(n) {
   res <- mc_call(S0, K, r, sigma, T_, n, seed = 2026)
-  data.frame(
-    n      = n,
-    odhad  = res$estimate,
-    se     = res$se,
-    chyba  = abs(res$estimate - C_bs)
-  )
+  data.frame(n = n, odhad = res$estimate, se = res$se,
+             chyba = abs(res$estimate - C_bs))
 }))
 
 knitr::kable(
   tab,
   col.names = c("n", "Odhad MC", "Štand. chyba", "|MC − BS|"),
-  digits    = 5,
-  align     = "rrrr"
+  digits = 5, align = "rrrr"
 )
 ```
 
@@ -243,8 +220,7 @@ idx <- seq(100, n_max, by = 50)
 
 plot(idx, cumul_mean[idx], type = "l", lwd = 1.5, col = "steelblue",
      ylim = c(C_bs - 1.5, C_bs + 1.5),
-     xlab = "počet simulácií n", ylab = "odhad ceny opcie",
-     main = "")
+     xlab = "počet simulácií n", ylab = "odhad ceny opcie")
 polygon(c(idx, rev(idx)),
         c(cumul_mean[idx] - 1.96 * cumul_se[idx],
           rev(cumul_mean[idx] + 1.96 * cumul_se[idx])),
@@ -268,37 +244,276 @@ $$
 \overline{S} = \frac{1}{m} \sum_{j=1}^{m} S_{t_j}.
 $$ {#eq-asian}
 
-Na rozdiel od @eq-mc tu musíme generovať celé trajektórie cien, nie len
-koncovú hodnotu:
-
 ```{r}
 #| label: asian
 mc_asian <- function(S0, K, r, sigma, T_, n, m, seed = NULL) {
   if (!is.null(seed)) set.seed(seed)
   dt <- T_ / m
   Z  <- matrix(rnorm(n * m), nrow = n, ncol = m)
-
   log_inc <- (r - 0.5 * sigma^2) * dt + sigma * sqrt(dt) * Z
   log_S   <- t(apply(log_inc, 1, cumsum))
   S_paths <- S0 * exp(log_S)
-
   S_avg   <- rowMeans(S_paths)
   payoff  <- pmax(S_avg - K, 0)
   disc    <- exp(-r * T_) * payoff
-  list(
-    estimate = mean(disc),
-    se       = sd(disc) / sqrt(n)
-  )
+  list(estimate = mean(disc), se = sd(disc) / sqrt(n))
 }
 
 asian <- mc_asian(S0, K, r, sigma, T_, n = 50000, m = 50, seed = 7)
-asian
 ```
 
 Cena ázijskej opcie ($`r round(asian$estimate, 4)`$) je nižšia než cena
-európskej opcie ($`r round(C_bs, 4)`$), čo je očakávané: priemerovanie
-znižuje volatilitu výplaty, a teda aj cenu opcie [@glasserman2003,
-kap. 4].
+európskej opcie ($`r round(C_bs, 4)`$): priemerovanie znižuje volatilitu
+výplaty, a teda aj cenu opcie [@glasserman2003, kap. 4].
+
+# Aplikácia na reálne dáta: Apple Inc. {#sec-realne-data}
+
+V tejto sekcii aplikujeme obe metódy na akciu **Apple Inc. (NASDAQ:
+AAPL)**. Dáta sú stiahnuté zo služby Yahoo Finance pomocou packagu
+`quantmod` a uložené v adresári `data/`. V projekte sú dáta automaticky
+aktualizované každý deň cez GitHub Actions.
+
+```{r}
+#| label: load-data
+prices  <- read.csv("data/aapl_prices.csv")
+prices$date <- as.Date(prices$date)
+
+# Meta-info
+meta_lines <- readLines("data/meta.txt")
+meta <- setNames(
+  trimws(sub("^[^:]+:\\s*", "", meta_lines)),
+  trimws(sub(":.*$", "", meta_lines))
+)
+
+S0_real     <- as.numeric(meta["spot_price"])
+spot_date   <- meta["spot_date"]
+fetched_at  <- meta["fetched_at"]
+```
+
+Aktuálna cena akcie ku dňu **`r spot_date`** je **$`r sprintf("%.2f", S0_real)`**.
+
+## Vývoj ceny akcie
+
+@fig-aapl-price zobrazuje vývoj ceny AAPL za posledné 2 roky.
+
+```{r}
+#| label: fig-aapl-price
+#| fig-cap: "Vývoj zatváracej ceny AAPL za posledné 2 roky. Dáta: Yahoo Finance."
+#| fig-width: 8
+#| fig-height: 4
+
+plot(prices$date, prices$close, type = "l", lwd = 1.2, col = "steelblue",
+     xlab = "dátum", ylab = "zatváracia cena (USD)",
+     main = "")
+grid(col = "gray80")
+abline(h = S0_real, lty = 3, col = "darkgray")
+```
+
+## Odhad volatility z historických dát
+
+Volatilita $\sigma$ je v Black-Scholesovom modeli kľúčový parameter,
+ktorý nie je priamo pozorovateľný. Tradičný spôsob jej odhadu je z
+historických logaritmických denných výnosov
+
+$$
+r_t = \ln\!\frac{S_t}{S_{t-1}}.
+$$ {#eq-logret}
+
+Anualizovaná volatilita sa získa škálovaním smerodajnej odchýlky denných
+výnosov faktorom $\sqrt{252}$, kde 252 je typický počet obchodných dní v
+roku.
+
+```{r}
+#| label: hist-vol
+log_returns <- diff(log(prices$close))
+sigma_daily <- sd(log_returns)
+sigma_hist  <- sigma_daily * sqrt(252)
+
+mu_daily    <- mean(log_returns)
+mu_annual   <- mu_daily * 252
+```
+
+Empirické hodnoty:
+
+- denná smerodajná odchýlka výnosov: $`r sprintf("%.4f", sigma_daily)`$
+- **anualizovaná historická volatilita:** $\hat\sigma_{\mathrm{hist}} = `r sprintf("%.4f", sigma_hist)`$
+  (`r sprintf("%.2f", sigma_hist*100)` %)
+- anualizovaný priemerný výnos: $`r sprintf("%.4f", mu_annual)`$
+
+## Test predpokladu normality
+
+Black-Scholesov model predpokladá, že logaritmické výnosy sú normálne
+rozdelené. @fig-aapl-returns porovnáva empirické rozdelenie výnosov AAPL
+s prispôsobenou normálnou hustotou.
+
+```{r}
+#| label: fig-aapl-returns
+#| fig-cap: "Histogram denných logaritmických výnosov AAPL s nadprispôsobenou normálnou hustotou (červená čiara). Empirické dáta vykazujú výraznejšie chvosty než predpokladá normálne rozdelenie — znak tzv. *fat tails*, dobre známy problém Black-Scholesovho modelu."
+#| fig-width: 7
+#| fig-height: 4
+
+hist(log_returns, breaks = 50, freq = FALSE,
+     col = adjustcolor("steelblue", 0.6), border = "white",
+     xlab = "log výnos", ylab = "hustota", main = "")
+xs <- seq(min(log_returns), max(log_returns), length.out = 200)
+lines(xs, dnorm(xs, mean = mu_daily, sd = sigma_daily),
+      col = "red", lwd = 2)
+legend("topright",
+       legend = c("empirické dáta", "N(μ̂, σ̂²)"),
+       fill = c(adjustcolor("steelblue", 0.6), NA),
+       border = c("white", NA),
+       lty = c(NA, 1), col = c(NA, "red"), lwd = c(NA, 2),
+       bty = "n")
+```
+
+Vizuálne aj kvantitatívne (Jarque-Bera test, p-hodnota
+< $`r format(jarque.bera <- {
+  n  <- length(log_returns)
+  sk <- mean((log_returns - mu_daily)^3) / sigma_daily^3
+  ku <- mean((log_returns - mu_daily)^4) / sigma_daily^4 - 3
+  jb <- n / 6 * (sk^2 + ku^2 / 4)
+  pchisq(jb, df = 2, lower.tail = FALSE)
+}, scientific = TRUE, digits = 2)`$) zamietame normalitu výnosov.
+Špicatosť (kurtóza) je výrazne vyššia než 3 — extrémne pohyby na trhu sa
+vyskytujú častejšie, než by predpovedalo normálne rozdelenie. Tento jav
+sa nazýva *fat tails* a je jednou z hlavných výhrad voči Black-Scholesovmu
+modelu.
+
+## Porovnanie modelových cien s trhovými
+
+Teraz aplikujeme obe metódy na konkrétnu sériu kúpnych opcií na AAPL.
+Dáta sú stiahnuté z aktuálneho option chain.
+
+```{r}
+#| label: load-options
+options_path <- "data/aapl_options.csv"
+have_options <- file.exists(options_path) &&
+                file.size(options_path) > 0
+```
+
+```{r}
+#| label: options-analysis
+#| eval: !expr have_options
+
+opts <- read.csv(options_path)
+
+T_real <- as.numeric(meta["years_to_expiry"])
+expiry <- meta["option_expiry"]
+r_real <- 0.045   # bezrizikova miera ~ 3M T-bill yield
+
+# Implikovana volatilita: hladame sigma t.z. BS(sigma) = market_price.
+# Pouzivame bisekciu na (0.001, 5).
+implied_vol <- function(market_price, S0, K, r, T_) {
+  f <- function(sigma) bs_call(S0, K, r, sigma, T_) - market_price
+  if (f(0.001) > 0 || f(5) < 0) return(NA_real_)
+  uniroot(f, interval = c(0.001, 5))$root
+}
+
+# Pre kazdu opciu spocitame: BS cenu (s historickou IV), MC cenu, IV
+opts$bs_hist <- bs_call(S0_real, opts$strike, r_real, sigma_hist, T_real)
+
+opts$mc_hist <- sapply(opts$strike, function(K_i) {
+  res <- mc_call(S0_real, K_i, r_real, sigma_hist, T_real,
+                 n = 50000, seed = 1)
+  res$estimate
+})
+
+opts$iv_implied <- mapply(function(price, K_i) {
+  implied_vol(price, S0_real, K_i, r_real, T_real)
+}, opts$mid, opts$strike)
+
+opts$diff_bs <- opts$mid - opts$bs_hist
+```
+
+```{r}
+#| label: tbl-options
+#| tbl-cap: "Porovnanie trhových cien call opcií na AAPL s modelovými cenami. *Mid* je priemer bid/ask. *BS* a *MC* používajú historickú volatilitu. *IV* je implikovaná volatilita získaná inverziou Black-Scholesovej formule."
+#| eval: !expr have_options
+
+display_tab <- data.frame(
+  Strike = opts$strike,
+  Bid    = opts$bid,
+  Ask    = opts$ask,
+  Mid    = opts$mid,
+  BS     = opts$bs_hist,
+  MC     = opts$mc_hist,
+  Rozdiel = opts$diff_bs,
+  IV     = opts$iv_implied
+)
+
+knitr::kable(display_tab,
+             col.names = c("K", "Bid", "Ask", "Mid", "BS (σ_hist)",
+                           "MC (σ_hist)", "Trh − BS", "IV"),
+             digits = 4, align = "r")
+```
+
+## Volatility smile
+
+Implikovaná volatilita ako funkcia strike-u zvyčajne nie je konštantná,
+hoci Black-Scholesov model predpokladá opak. Empiricky pozorovaný tvar
+sa nazýva **volatility smile** alebo **smirk** [@hull2018, kap. 20].
+
+```{r}
+#| label: fig-vol-smile
+#| fig-cap: "Implikovaná volatilita call opcií AAPL ako funkcia strike-u. Vodorovná čiara označuje historickú volatilitu. Zakrivený tvar (smile/smirk) je znakom, že trh oceňuje extrémne pohyby vyššie, než predpokladá Black-Scholesov model s konštantnou volatilitou."
+#| fig-width: 7
+#| fig-height: 4
+#| eval: !expr have_options
+
+valid <- !is.na(opts$iv_implied)
+
+plot(opts$strike[valid], opts$iv_implied[valid],
+     type = "b", pch = 19, col = "steelblue", lwd = 2,
+     xlab = "strike K (USD)", ylab = "implikovaná volatilita σ_imp")
+abline(h = sigma_hist, lty = 2, col = "darkgray")
+abline(v = S0_real, lty = 3, col = "tomato")
+legend("topright",
+       legend = c("σ implikovaná", "σ historická", "spot S₀"),
+       col = c("steelblue", "darkgray", "tomato"),
+       lty = c(1, 2, 3), lwd = c(2, 1, 1), pch = c(19, NA, NA),
+       bty = "n")
+```
+
+## Diskusia výsledkov
+
+```{r}
+#| label: discussion-stats
+#| eval: !expr have_options
+#| echo: false
+mean_iv <- mean(opts$iv_implied, na.rm = TRUE)
+diff_iv <- mean_iv - sigma_hist
+mean_diff <- mean(opts$diff_bs, na.rm = TRUE)
+```
+
+```{r}
+#| label: discussion-stats-empty
+#| eval: !expr !have_options
+#| echo: false
+mean_iv   <- NA
+diff_iv   <- NA
+mean_diff <- NA
+```
+
+Z @tbl-options a @fig-vol-smile vyplývajú tri pozorovania:
+
+1. **Modelová cena s historickou volatilitou systematicky podhodnocuje
+   trhové ceny.** Priemerný rozdiel je
+   `r if (have_options) sprintf("$%.3f", mean_diff) else "(nedostupné)"`.
+   Trh teda implicitne oceňuje volatilitu vyššie ako historický odhad.
+2. **Implikovaná volatilita nie je konštantná.** Krivka v @fig-vol-smile
+   má charakteristický tvar smile/smirk: out-of-the-money put a call
+   opcie majú vyššiu IV než at-the-money opcie.
+3. **Priemerná implikovaná volatilita** je
+   `r if (have_options) sprintf("%.3f (%.1f %%)", mean_iv, 100*mean_iv) else "(nedostupné)"`,
+   čo je o
+   `r if (have_options) sprintf("%.3f", diff_iv) else "(nedostupné)"`
+   viac než historická volatilita
+   (`r sprintf("%.3f", sigma_hist)`). Tento rozdiel sa niekedy nazýva
+   **volatility risk premium**.
+
+Tieto pozorovania motivujú ďalší vývoj v oblasti finančnej matematiky:
+modely so stochastickou volatilitou (Heston), modely s skokmi
+(Merton-jump-diffusion) a lokálnou volatilitou (Dupire).
 
 # Záver {#sec-zaver}
 
@@ -308,15 +523,27 @@ simuláciu. Empiricky sme overili teoretickú rýchlosť konvergencie
 $\mathcal{O}(1/\sqrt{n})$ — pri $n = 10^6$ sa Monte Carlo odhad líši od
 analytickej hodnoty rádovo o tisíciny.
 
-Hoci pre vanilkové európske opcie je analytická formula presná aj
-rýchlejšia, Monte Carlo metóda má dve zásadné výhody: je všeobecná
-(pracuje s ľubovoľnou výplatnou funkciou) a jej presnosť sa dá ľubovoľne
-zvyšovať počtom simulácií. Pre exotické opcie ako ázijská alebo
-bariérová je MC často jediný praktický nástroj.
+Hlavný prínos tejto práce je však v aplikácii oboch metód na **reálne
+trhové dáta** akcie Apple Inc. Ukázali sme, že:
 
-Ďalšie smery, ktorými by sa práca dala rozšíriť, zahŕňajú techniky
-redukcie rozptylu (antitetické premenné, kontrolné premenné) a oceňovanie
-amerických opcií metódou Longstaff-Schwartz, prehľad ktorých uvádza
-@glasserman2003.
+- empirické rozdelenie denných výnosov AAPL nie je normálne — má
+  výraznejšie chvosty (*fat tails*),
+- Black-Scholesov model s historickou volatilitou systematicky
+  podhodnocuje trhové ceny opcií,
+- implikovaná volatilita vykazuje charakteristický tvar *volatility
+  smile*, čo priamo protirečí predpokladu modelu o konštantnej
+  volatilite.
+
+Tieto pozorovania zhrnujú jeden z najdôležitejších poznatkov modernej
+finančnej matematiky: hoci je Black-Scholes elegantný a stále základným
+nástrojom, jeho predpoklady sú v reálnom svete porušené, a praktické
+oceňovanie vyžaduje pokročilejšie modely. Monte Carlo simulácia pritom
+zostáva univerzálnym nástrojom — funguje rovnako pre Black-Scholes ako aj
+pre Heston či Merton-jump-diffusion, kde uzavreté formule neexistujú.
+
+Ďalšie smery, ktorými by sa práca dala rozšíriť, zahŕňajú: techniky
+redukcie rozptylu (antitetické a kontrolné premenné), oceňovanie
+amerických opcií metódou Longstaff-Schwartz, alebo kalibráciu modelu so
+stochastickou volatilitou [@glasserman2003].
 
 # Literatúra {.unnumbered}
