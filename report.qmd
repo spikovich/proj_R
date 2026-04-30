@@ -402,19 +402,22 @@ expiry <- meta["option_expiry"]
 r_real <- 0.045   # bezrizikova miera ~ 3M T-bill yield
 
 # Implikovana volatilita: hladame sigma t.z. BS(sigma) = market_price.
-# Pouzivame bisekciu na (0.001, 5).
+# Vraciame NA ak cena lezi mimo arbitrážnych hranic alebo bisekcia zlyha.
 implied_vol <- function(market_price, S0, K, r, T_) {
-  f <- function(sigma) bs_call(S0, K, r, sigma, T_) - market_price
-  # Sanity: musi byt riesenie v intervale
   if (is.na(market_price) || market_price <= 0) return(NA_real_)
-  f_lo <- f(0.001); f_hi <- f(5)
-  if (is.na(f_lo) || is.na(f_hi)) return(NA_real_)
-  if (f_lo > 0 || f_hi < 0) return(NA_real_)
-  tryCatch(uniroot(f, interval = c(0.001, 5))$root,
-           error = function(e) NA_real_)
+  # Arbitražne hranice: max(0, S - K*e^-rT) <= C <= S
+  lower <- max(0, S0 - K * exp(-r * T_))
+  if (market_price < lower * 0.99 || market_price > S0) return(NA_real_)
+
+  f <- function(sigma) bs_call(S0, K, r, sigma, T_) - market_price
+  # Hladame v intervale (1%, 300%)
+  tryCatch({
+    res <- uniroot(f, interval = c(0.01, 3.0), tol = 1e-6)
+    res$root
+  }, error = function(e) NA_real_)
 }
 
-# Pre kazdu opciu spocitame: BS cenu (s historickou vol), MC cenu, IV
+# Pre kazdu opciu spocitame: BS cenu, MC cenu, IV
 opts$bs_hist <- bs_call(S0_real, opts$strike, r_real, sigma_hist, T_real)
 
 opts$mc_hist <- sapply(opts$strike, function(K_i) {
