@@ -42,4 +42,4 @@ wget https://raw.githubusercontent.com/citation-style-language/styles/master/iso
 quarto render
 ```
 
-Vygenerované HTML/PDF skončia v `_site/` 
+Vygenerované HTML/PDF skončia v `_site/`.
