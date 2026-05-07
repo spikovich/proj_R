@@ -1,3 +1,11 @@
+[![Render and Publish](https://github.com/spikovich/proj_R/actions/workflows/publish.yml/badge.svg)](https://github.com/spikovich/proj_R/actions/workflows/publish.yml)
+[![Live site](https://img.shields.io/badge/live-demo-success?logo=github)](https://spikovich.github.io/proj_R/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Made with Quarto](https://img.shields.io/badge/made%20with-Quarto-447099?logo=quarto)](https://quarto.org)
+[![R](https://img.shields.io/badge/R-%E2%89%A54.4-276DC3?logo=r)](https://www.r-project.org/)
+[![Data: AAPL](https://img.shields.io/badge/data-AAPL%20live-orange)](https://finance.yahoo.com/quote/AAPL)
+
+
 # Oceňovanie európskych opcií: Black-Scholes vs Monte Carlo
 
 **Autor:** Ian Spika
@@ -43,3 +51,5 @@ quarto render
 ```
 
 Vygenerované HTML/PDF skončia v `_site/`.
+
+Tento projekt je dostupný pod [MIT licenciou](LICENSE).
