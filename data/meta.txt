@@ -1,10 +1,10 @@
 ticker: AAPL
-spot_price: 287.5100
-spot_date: 2026-05-06
+spot_price: 287.4400
+spot_date: 2026-05-07
 option_expiry: 2026-07-17
-days_to_expiry: 71
-years_to_expiry: 0.1945
+days_to_expiry: 70
+years_to_expiry: 0.1918
 n_options: 34
 market_was_open: TRUE
 price_source: mid (bid+ask)/2
-fetched_at: 2026-05-07 17:42:25.922188
+fetched_at: 2026-05-08 17:02:56.4712
