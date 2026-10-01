@@ -326,6 +326,7 @@ roku.
 ```{r}
 #| label: hist-vol
 log_returns <- diff(log(prices$close))
+log_returns <- log_returns[is.finite(log_returns)]
 sigma_daily <- sd(log_returns)
 sigma_hist  <- sigma_daily * sqrt(252)
 
